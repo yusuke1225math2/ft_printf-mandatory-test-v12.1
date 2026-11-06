@@ -11,8 +11,8 @@
 5. `valgrind` によるメモリエラーとリークの確認
 6. 本物の `printf` と `ft_printf` の出力の `diff`
 
-測定環境は Ubuntu 24.04、gcc 13.3、glibc 2.39、x86_64 です。下の表の「出力」と
-「ret」は、このマシンで本物の `printf` が出した値です。`ft_printf` もすべて同じ結果でした。
+測定環境は Ubuntu 22.04、gcc 11.4、glibc 2.35、x86_64 です。下の表の「出力」と
+「ret」は、Ubuntu 22.04 で本物の `printf` が出した値です。`ft_printf` もすべて同じ結果でした。
 
 ## 利用時の注意
 
@@ -137,14 +137,66 @@ bash tests/test_all.sh 2>&1 | tee test.log
 
 ## 結果の見方
 
-`tmp/c.out` は、ケースごとに `OK` / `KO` を表示し、最後にまとめを出します。
+### 成功時の出力
+
+**コンパイルの警告が大量に出ていても、次の 2 点を満たしていれば成功です。**
+
+1. `===== write failure / same process / undefined =====` の最後に `ALL OK (0 KO)` と出ている
+2. 最後の行が `===== diff between printf and ft_printf =====` で、そのあとに何も出ていない
+
+成功時の出力は次のようになります (長いので省略しています。`<-` は説明のために付けたもので、
+実際には表示されません)。
 
 ```text
-OK: fail plain
-OK: fail c
+===== norminette =====
+ft_printf.c: OK!
 ...
-ALL OK (0 KO)
+===== make =====
+cc -Wall -Wextra -Werror -I. -c ft_printf.c -o ft_printf.o
+...
+make: Nothing to be done for 'all'.            <- relink していない (目視で確認)
+...
+===== test =====
+tests/out_printf.c: In function 'main':
+tests/test_cases.h:1:20: warning: format '%s' expects argument ...
+...                                            <- 警告は無視してよい
+===== write failure / same process / undefined =====
+OK: fail plain
+...
+OK: NULL fmt
+ALL OK (0 KO)                                  <- 確認点 1
+===== valgrind ft_printf output =====
+==1454780== Memcheck, a memory error detector
+...
+CASE_SP_00  : (null)  (nil)
+CASE_SP_00  (ret): 14
+...
+==1454780== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+===== diff between printf and ft_printf =====
+                                               <- 確認点 2: 何も出ない
 ```
+
+見た目が紛らわしい部分は次のとおりです。
+
+| 出力 | 問題ない理由 |
+| --- | --- |
+| `===== test =====` の `warning` | 本物の `printf` を使う `tests/out_printf.c` をコンパイルしたときの警告です。`printf("%s", NULL)` など、テストのためにわざと書いた呼び出しに対して gcc が出しています。自分の実装への指摘ではありません。警告の内容や数はコンパイラによって変わります |
+| `make` の行が何度も出る | `fclean`、`make`、`make`、`re`、`clean`、`make` を順に実行しているためです |
+| valgrind の中の `CASE_...` の行 | `ft_printf` の出力そのものです。合否はここでは判定しません。`CASE_c_03` の文字化けや `CASE_c_01` の見えない文字は、バイト `0xC8` と NUL を出すケースなので正常です |
+
+注意点:
+
+- `warning` が無視できるのは `tests/out_printf.c` の分だけです。自分のソースや
+  `tests/out_ft_printf.c` は `-Werror` 付きでビルドするので、警告が出るとエラーになってスクリプトが止まります。
+- `diff` の見出しが出ていないのに出力が終わっている場合は、途中のステップで止まっています。
+  何も出ていなくても成功ではありません。スクリプトは失敗したステップで止まるので、
+  最後の `diff` の見出しまで届いていれば、norminette、ビルド、valgrind はすべて通っています。
+- relink だけは自動で判定しません。2 回目の `make` の `Nothing to be done for 'all'` を目視で確認してください。
+- macOS では `SP_00` と `p_05` に差が出ます ([既知の限界](#既知の限界)を参照)。
+
+### 失敗時の出力
+
+`tmp/c.out` は、ケースごとに `OK` / `KO` を表示し、最後にまとめを出します。
 
 - `KO: <名前>` が出たら、そのケースが失敗しています。
 - 失敗があると最後に `KO (N KO)` と表示され、終了コード 1 でスクリプトが止まります。
@@ -395,7 +447,7 @@ ALL OK (0 KO)
 ## 4. 未定義動作（3 件、`TEST_EXPECT`）
 
 C 規格はこれらの呼び出しの結果を定めていません。
-`ft_printf` は、このマシンで測った glibc 2.39 の挙動に合わせています。
+`ft_printf` は、Ubuntu 22.04 で測った glibc 2.35 の挙動に合わせています。
 
 | 名前 | 入力 | 期待する出力 | ret | 理由 |
 | --- | --- | --- | --- | --- |
